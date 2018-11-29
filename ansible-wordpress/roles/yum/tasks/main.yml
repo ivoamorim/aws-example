@@ -1,0 +1,10 @@
+- name: Upgrade All Packages
+  yum:
+    name: '*'
+    state: latest
+
+- name: Install Yum Packages
+  yum:
+    name: '{{ item }}'
+    state: present
+  with_items: '{{ yum_packages }}'

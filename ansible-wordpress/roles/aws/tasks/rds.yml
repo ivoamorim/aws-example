@@ -1,0 +1,44 @@
+---
+- name: Get Subnet
+  ec2_vpc_subnet_facts:
+    region: "{{ aws.common.region }}"
+    filters:
+      "tag:route": private
+  register: ec2_subnet_facts
+  check_mode: no
+
+- name: Create RDS Subnet Group
+  rds_subnet_group:
+    name: "{{ aws.rds.subnet_group.name }}"
+    region: "{{ aws.common.region }}"
+    state: present
+    description: "{{ aws.rds.subnet_group.description }}"
+    subnets: "{{ ec2_subnet_facts.subnets | map(attribute='id') | list }}"
+  register: rds_subnet_group
+
+- name: Get Security Group
+  ec2_group_facts:
+    region: "{{ aws.common.region }}"
+    filters:
+      "tag:Name": "{{ aws.vpc.security_group.security_group2.name }}"
+  register: ec2_group_facts
+  check_mode: no
+
+- name: Create RDS Instance
+  rds:
+    command: create
+    instance_name: "{{ aws.rds.instance_name }}"
+    username: "{{ aws.rds.db_user }}"
+    password: "{{ aws.rds.db_password }}"
+    db_name: "{{ aws.rds.db_name }}"
+    region: "{{ aws.common.region }}"
+    subnet: "{{ aws.rds.subnet_group.name }}"
+    vpc_security_groups: "{{ ec2_group_facts.security_groups[0].group_id }}"
+    db_engine: "{{ aws.rds.db_engine }}"
+    engine_version: "{{ aws.rds.engine_version }}"
+    license_model: "{{ aws.rds.license_model }}"
+    instance_type: "{{ aws.rds.instance }}"
+    size: "{{ aws.rds.size }}"
+    tags:
+      Name: "{{ aws.rds.instance_name }}"
+  register: rds

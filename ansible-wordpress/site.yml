@@ -1,0 +1,19 @@
+---
+- name: Create AWS
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - aws
+  tasks:
+    - name: Refresh inventory
+      meta: refresh_inventory
+
+- name: Build WordPress
+  hosts: tag_Name_wordpress
+  user: ec2-user
+  become: true
+  gather_facts: true
+  roles:
+    - yum
+    - wordpress

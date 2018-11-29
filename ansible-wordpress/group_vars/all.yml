@@ -1,0 +1,6 @@
+---
+my_vars:
+  ec2:
+    key_name: XXXXX
+  rds:
+    endpoint: XXXXX

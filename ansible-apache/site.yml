@@ -1,0 +1,21 @@
+---
+- name: Create Amazon Web Services
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - aws
+  tasks:
+    - name: Refresh inventory
+      meta: refresh_inventory
+
+- name: Build HTTPD
+  hosts: tag_Name_Tutorial_httpd
+  user: ec2-user
+  become: true
+  gather_facts: true
+  tasks:
+    - name: httpd is installed
+      yum: name=httpd state=installed
+    - name: httpd is running and enabled
+      service: name=httpd state=started enabled=yes

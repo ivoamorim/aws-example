@@ -1,0 +1,75 @@
+---
+aws:
+  common:
+    region: us-east-1
+  vpc:
+    name: VPC-tutorial
+    cidr_block: 10.0.0.0/16
+    tags:
+      Name: VPC-tutorial
+    igw:
+      tags:
+        Name: VPC-IGW-tutorial
+    subnet:
+      subnet1:
+        tags:
+          Name: VPC-public-a-tutorial
+          route: public
+        cidr: 10.0.1.0/24
+        zone: a
+      subnet2:
+        tags:
+          Name: VPC-private-a-tutorial
+          route: private
+        cidr: 10.0.2.0/24
+        map_public: false
+        zone: a
+      subnet3:
+        tags:
+          Name: VPC-private-b-tutorial
+          route: private
+        cidr: 10.0.3.0/24
+        map_public: false
+        zone: b
+    route_table:
+      tags:
+        Name: VPC-RT-public-tutorial
+    security_group:
+      security_group1:
+        name: VPC-SG-public-tutorial
+        description: WordPress
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            ports:
+              - 80
+              - 443
+            cidr_ip: 0.0.0.0/0
+      security_group2:
+        name: VPC-SG-DB-tutorial
+        description: DB
+        rules:
+          - proto: tcp
+            ports:
+              - 3306
+            cidr_ip: 10.0.1.0/24
+  rds:
+    subnet_group:
+      name: SG-WordPressDB-tutorial
+      description: WordPress DB Subnet
+    instance_name: Tutorial-WordPressDB
+    db_name: wordpress
+    db_user: root
+    db_password: password
+    db_engine: MySQL
+    engine_version: 5.6.37
+    license_model: general-public-license
+    instance: db.t2.micro
+    size: 20
+  ec2:
+    name: WordPress
+    instance_type: t2.micro
+    image: ami-09479453c5cde9639

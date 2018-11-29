@@ -1,0 +1,9 @@
+---
+yum_packages:
+  - httpd
+  - mysql57
+  - MySQL-python27
+  - php
+  - php-mysql
+  - php-gd
+  - php-mbstring

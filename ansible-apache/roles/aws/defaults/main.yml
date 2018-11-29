@@ -1,0 +1,38 @@
+---
+aws:
+  common:
+    region: us-east-1
+  ec2:
+    name: Tutorial-httpd
+    instance_type: t2.micro
+    image: ami-09479453c5cde9639
+  vpc:
+    name: VPC-tutorial
+    cidr_block: 10.0.0.0/16
+    tags:
+      Name: VPC-tutorial
+    igw:
+      tags:
+        Name: VPC-IGW-tutorial
+    route_table:
+      tags:
+        Name: VPC-RT-Public-tutorial
+    security_group:
+      name: VPC-SG-tutorial
+      description: Tutorial Security Group
+      rules:
+        - proto: tcp
+          ports:
+            - 22
+          cidr_ip: 0.0.0.0/0
+        - proto: tcp
+          ports:
+            - 80
+            - 443
+          cidr_ip: 0.0.0.0/0
+    subnet:
+      subnet1:
+        cidr: 10.0.0.0/24
+        zone: a
+        tags:
+          Name: VPC-PublicA-tutorial
