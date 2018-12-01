@@ -1,0 +1,373 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  Create VPC and Subnet
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Creating VPC and Subnet"
+        Parameters:
+          - ProjectName
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VPCCIDR
+          - PublicSubnetBCIDR
+          - PublicSubnetCCIDR
+          - PrivateSubnetBCIDR
+          - PrivateSubnetCCIDR
+      - Label:
+          default: "NATGateway Configuration"
+        Parameters:
+          - NATGatewayBCreate
+          - NATGatewayCCreate
+
+    ParameterLabels:
+      VPCCIDR:
+        default: "VPC CIDR"
+      PublicSubnetBCIDR:
+        default: "PublicSubnetB CIDR"
+      PublicSubnetCCIDR:
+        default: "PublicSubnetC CIDR"
+      PrivateSubnetBCIDR:
+        default: "PrivateSubnetB CIDR"
+      PrivateSubnetCCIDR:
+        default: "PrivateSubnetC CIDR"
+      NATGatewayBCreate:
+        default: "NATGatewayBCreate"
+      NATGatewayCCreate:
+        default: "NATGatewayBCreate"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "VPCNatGWSample"
+
+  VPCCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+
+  PublicSubnetBCIDR:
+    Type: String
+    Default: "10.0.0.0/24"
+
+  PublicSubnetCCIDR:
+    Type: String
+    Default: "10.0.1.0/24"
+
+  PrivateSubnetBCIDR:
+    Type: String
+    Default: "10.0.10.0/24"
+
+  PrivateSubnetCCIDR:
+    Type: String
+    Default: "10.0.11.0/24"
+
+  NATGatewayBCreate:
+    Default: true
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+  NATGatewayCCreate:
+    Default: true
+    Type: String
+    AllowedValues:
+      - true
+      - false
+
+# ------------------------------------------------------------#
+# Conditions
+# ------------------------------------------------------------#
+Conditions:
+  IsCreateNATGatewayB: !Equals [ !Ref NATGatewayBCreate, true ]
+  IsCreateNATGatewayBfalse: !Equals [ !Ref NATGatewayBCreate, false ]
+
+  IsCreateNATGatewayC: !Equals [ !Ref NATGatewayCCreate, true ]
+  IsCreateNATGatewayCfalse: !Equals [ !Ref NATGatewayCCreate, false ]
+
+Resources:
+# ------------------------------------------------------------#
+#  VPC
+# ------------------------------------------------------------#
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpc"
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-igw"
+
+  InternetGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+# ------------------------------------------------------------#
+#  Subnet
+# ------------------------------------------------------------#
+  PublicSubnetB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1b"
+      CidrBlock: !Ref PublicSubnetBCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-b"
+
+  PublicSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1c"
+      CidrBlock: !Ref PublicSubnetCCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-c"
+
+  PrivateSubnetB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1b"
+      CidrBlock: !Ref PrivateSubnetBCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-subnet-b"
+
+  PrivateSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1c"
+      CidrBlock: !Ref PrivateSubnetCCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-subnet-c"
+
+# ------------------------------------------------------------#
+#  RouteTable
+# ------------------------------------------------------------#
+  PublicRouteTableB:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-route-b"
+
+  PublicRouteTableC:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-route-c"
+
+  PrivateRouteTableB:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-route-b"
+
+  PrivateRouteTableC:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-route-c"
+
+# ------------------------------------------------------------#
+# Routing
+# ------------------------------------------------------------#
+  PublicRouteB:
+    Type: "AWS::EC2::Route"
+    Condition: IsCreateNATGatewayB
+    Properties:
+      RouteTableId: !Ref PublicRouteTableB
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref InternetGateway
+
+  PublicRouteC:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PublicRouteTableC
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+# ------------------------------------------------------------#
+# RouteTable Associate
+# ------------------------------------------------------------#
+  PublicSubnetBRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTableB
+
+  PublicSubnetCRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTableC
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
+
+  PrivateSubnetCRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTableC
+
+# ------------------------------------------------------------#
+#  NAT Gateway AZ:B
+# ------------------------------------------------------------#
+  NATGatewayB:
+    Type: "AWS::EC2::NatGateway"
+    Condition: IsCreateNATGatewayB
+    Properties:
+      AllocationId: !GetAtt NATGatewayBEIP.AllocationId
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-ngw-b"
+
+  NATGatewayBEIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  # Update Route
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGatewayB
+      RouteTableId: !Ref PrivateRouteTableB
+
+  PrivateRouteC2:
+    Type: "AWS::EC2::Route"
+    Condition: IsCreateNATGatewayCfalse
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGatewayB
+      RouteTableId: !Ref PrivateRouteTableC
+
+# ------------------------------------------------------------#
+#  NAT Gateway AZ:C
+# ------------------------------------------------------------#
+  NATGatewayC:
+    Type: "AWS::EC2::NatGateway"
+    Condition: IsCreateNATGatewayC
+    Properties:
+      AllocationId: !GetAtt NATGatewayCEIP.AllocationId
+      SubnetId: !Ref PublicSubnetC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-natgw-c"
+
+  NATGatewayCEIP:
+    Type: "AWS::EC2::EIP"
+    Condition: IsCreateNATGatewayC
+    Properties:
+      Domain: vpc
+
+  # Update Route
+  PrivateRouteC:
+    Type: "AWS::EC2::Route"
+    Condition: IsCreateNATGatewayC
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableC
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGatewayC
+
+  PrivateRouteB2:
+    Type: "AWS::EC2::Route"
+    Condition: IsCreateNATGatewayBfalse
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NATGatewayC
+
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  VPC:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${ProjectName}-vpc"
+
+  VPCCIDR:
+    Value: !Ref VPCCIDR
+    Export:
+      Name: !Sub "${ProjectName}-vpc-cidr"
+
+# Subnet
+  PublicSubnetB:
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-b"
+
+  PublicSubnetBCIDR:
+    Value: !Ref PublicSubnetBCIDR
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-b-cidr"
+
+  PublicSubnetC:
+    Value: !Ref PublicSubnetC
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-c"
+
+  PublicSubnetCCIDR:
+    Value: !Ref PublicSubnetCCIDR
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-c-cidr"
+
+# Route
+  PublicRouteTableB:
+    Value: !Ref PublicRouteTableB
+    Export:
+      Name: !Sub "${ProjectName}-public-route-a"
+
+  PublicRouteTableC:
+    Value: !Ref PublicRouteTableC
+    Export:
+      Name: !Sub "${ProjectName}-public-route-c"
+
+# NATGateway EIP
+  NATGatewayBEIP:
+    Condition: IsCreateNATGatewayB
+    Value: !Ref NATGatewayBEIP
+    Export:
+      Name: !Sub "${ProjectName}-natgw-b-eip"
+
+  NATGatewayCEIP:
+    Condition: IsCreateNATGatewayC
+    Value: !Ref NATGatewayCEIP
+    Export:
+      Name: !Sub "${ProjectName}-natgw-c-eip"

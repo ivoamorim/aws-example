@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  EC2 Instance Create
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Name"
+        Parameters:
+          - Project
+      - Label:
+          default: "InternetELB Configuration"
+        Parameters:
+          - InternetELBName
+      - Label:
+          default: "EC2Instance Configuration"
+        Parameters:
+          - KeyPairName
+          - EC2InstanceName
+          - EC2InstanceAMI
+          - EC2InstanceInstanceType
+          - EC2InstanceVolumeType
+          - EC2InstanceVolumeSize
+          - EC2InstanceSubnet
+          - SSHAccessSourceIP
+
+Parameters:
+  Project:
+    Type: String
+    Default: "EC2Sample"
+    Description: Project Name
+
+#InternetELB
+  InternetELBName:
+    Type: String
+    Default: "web"
+    Description: Insert Internet ELB Name
+
+#EC2Instance
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: ""
+    Description: Select Key Pair
+  EC2InstanceName:
+    Type: String
+    Default: "web"
+    Description: Insert EC2 Instance Name
+  EC2InstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    Description: Select AMI
+  EC2InstanceInstanceType:
+    Type: String
+    Default: "t2.micro"
+    Description: Select EC2 Instance Type
+  EC2InstanceVolumeType:
+    Type: String
+    Default: "gp2"
+    Description: Select Volume Type
+  EC2InstanceVolumeSize:
+    Type: String
+    Default: "10"
+    Description: Insert Volume Size
+  EC2InstanceSubnet:
+    Type: String
+    Default: PublicSubnet1
+    AllowedValues: [ PublicSubnet1, PublicSubnet2 ]
+  SSHAccessSourceIP:
+    Type: String
+    Description: Insert Network Range to allow SSH access
+
+Resources:
+# IAM Profile
+  EC2IAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${Project}-${EC2InstanceName}-Role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: EC2IAMRole
+      InstanceProfileName: !Sub "${Project}-${EC2InstanceName}-Profile"
+
+# EC2 Instance
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: !Ref EC2InstanceName
+      ImageId: !Ref EC2InstanceAMI
+      InstanceType: !Ref EC2InstanceInstanceType
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      DisableApiTermination: false
+      EbsOptimized: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: !Ref EC2InstanceVolumeType
+            VolumeSize: !Ref EC2InstanceVolumeSize
+      SecurityGroupIds:
+        - !Ref ManagedSecurityGroup
+      SubnetId: { "Fn::ImportValue": !Sub "${Project}-${EC2InstanceSubnet}" }
+      UserData: !Base64 |
+        #! /bin/bash
+        yum update -y
+
+# SecurityGroup for Managed
+  ManagedSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: { "Fn::ImportValue": !Sub "${Project}-Vpc" }
+      GroupName: !Sub "${Project}-SecurityGroup"
+      GroupDescription: "-"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHAccessSourceIP
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: ManagedSecurityGroup
+
+# SecurityGroup for ELB
+  ELBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: { "Fn::ImportValue": !Sub "${Project}-Vpc" }
+      GroupName: !Sub "${Project}-ELBSecurityGroup"
+      GroupDescription: "-"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: ELBSecurityGroup
+
+# SecurityGroup for Web
+  WebSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: { "Fn::ImportValue": !Sub "${Project}-Vpc" }
+      GroupName: !Sub "${Project}-WebSecurityGroup"
+      GroupDescription: "-"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !GetAtt [ ELBSecurityGroup, GroupId ]
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: WebSecurityGroup
+
+# ElasticIP
+  ElasticIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  ElasticIPAssociate:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      InstanceId: !Ref EC2Instance
+
+# Internet ELB
+  InternetELB:
+    Type: "AWS::ElasticLoadBalancing::LoadBalancer"
+    Properties:
+      LoadBalancerName: !Sub "${Project}-${InternetELBName}ELB"
+      Scheme: "internet-facing"
+      CrossZone: true
+      HealthCheck:
+        Target: "TCP:80"
+        HealthyThreshold: 2
+        UnhealthyThreshold: 2
+        Interval: 30
+        Timeout: 5
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: 300
+      Listeners:
+        - LoadBalancerPort: 80
+          InstancePort: 80
+          Protocol: HTTP
+      Instances:
+        - !Ref EC2Instance
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+      Subnets:
+        - { "Fn::ImportValue": !Sub "${Project}-PublicSubnet1" }
+        - { "Fn::ImportValue": !Sub "${Project}-PublicSubnet2" }
+
+Outputs:
+  ELBDNSName:
+    Value: !GetAtt InternetELB.DNSName
+    Export:
+      Name: !Sub "${Project}-${InternetELBName}RLBDNSName"
+
+  EC2InstanceID:
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-Id"
+
+  EC2InstancePrivateIp:
+    Value: !GetAtt EC2Instance.PrivateIp
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-PrivateIp"
+
+  EC2InstanceEIP:
+    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-Eip"
+
+  EC2InstanceRoleName:
+    Value: !Sub "${Project}-${EC2InstanceName}-Role"
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-RoleName"

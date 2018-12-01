@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  Create VPC and Subnet
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Creating VPC and Subnet"
+        Parameters:
+          - ProjectName
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VPCCIDR
+          - PublicSubnetBCIDR
+          - PublicSubnetCCIDR
+    ParameterLabels:
+      VPCCIDR:
+        default: "VPC CIDR"
+      PublicSubnetBCIDR:
+        default: "PublicSubnetB CIDR"
+      PublicSubnetCCIDR:
+        default: "PublicSubnetC CIDR"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------#
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "VPCPublicSample"
+
+  VPCCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+
+  PublicSubnetBCIDR:
+    Type: String
+    Default: "10.0.0.0/24"
+
+  PublicSubnetCCIDR:
+    Type: String
+    Default: "10.0.1.0/24"
+
+Resources:
+# ------------------------------------------------------------#
+#  VPC
+# ------------------------------------------------------------#
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpc"
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-igw"
+
+  InternetGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+# ------------------------------------------------------------#
+#  Subnet
+# ------------------------------------------------------------#
+  PublicSubnetB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1b"
+      CidrBlock: !Ref PublicSubnetBCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-b"
+
+  PublicSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: "us-west-1c"
+      CidrBlock: !Ref PublicSubnetCCIDR
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-subnet-c"
+
+# ------------------------------------------------------------#
+#  RouteTable
+# ------------------------------------------------------------#
+  PublicRouteTableB:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-route-b"
+
+  PublicRouteTableC:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-route-c"
+
+# ------------------------------------------------------------#
+# Routing
+# ------------------------------------------------------------#
+  PublicRouteB:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PublicRouteTableB
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteC:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref PublicRouteTableC
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+# ------------------------------------------------------------#
+# RouteTable Associate
+# ------------------------------------------------------------#
+  PublicSubnetBRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTableB
+
+  PublicSubnetCRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTableC
+
+# ------------------------------------------------------------#
+# Output Parameters
+# ------------------------------------------------------------#
+Outputs:
+  VPC:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${ProjectName}-vpc"
+
+  VPCCIDR:
+    Value: !Ref VPCCIDR
+    Export:
+      Name: !Sub "${ProjectName}-vpc-cidr"
+
+# Subnet
+  PublicSubnetB:
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-b"
+
+  PublicSubnetBCIDR:
+    Value: !Ref PublicSubnetBCIDR
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-b-cidr"
+
+  PublicSubnetC:
+    Value: !Ref PublicSubnetC
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-c"
+
+  PublicSubnetCCIDR:
+    Value: !Ref PublicSubnetCCIDR
+    Export:
+      Name: !Sub "${ProjectName}-public-subnet-c-cidr"
+
+# Route
+  PublicRouteTableB:
+    Value: !Ref PublicRouteTableB
+    Export:
+      Name: !Sub "${ProjectName}-public-route-a"
+
+  PublicRouteTableC:
+    Value: !Ref PublicRouteTableC
+    Export:
+      Name: !Sub "${ProjectName}-public-route-c"

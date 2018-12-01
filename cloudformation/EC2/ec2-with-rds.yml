@@ -1,0 +1,307 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  EC2 Instance Create
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: "Project Name"
+        Parameters:
+          - Project
+      - Label:
+          default: "InternetELB Configuration"
+        Parameters:
+          - InternetELBName
+      - Label:
+          default: "EC2Instance Configuration"
+        Parameters:
+          - KeyPairName
+          - EC2InstanceName
+          - EC2InstanceAMI
+          - EC2InstanceInstanceType
+          - EC2InstanceVolumeType
+          - EC2InstanceVolumeSize
+          - EC2InstanceSubnet
+          - SSHAccessSourceIP
+          - DBInstanceName
+          - MySQLMajorVersion
+          - MySQLMinorVersion
+          - DBInstanceClass
+          - DBInstanceStorageSize
+          - DBInstanceStorageType
+          - DBName
+          - DBMasterUserName
+          - DBPassword
+          - MultiAZ
+
+Parameters:
+  Project:
+    Type: String
+    Default: "EC2Sample"
+    Description: Project Name
+
+# EC2 Instance
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: ""
+    Description: Select Key Pair
+  EC2InstanceName:
+    Type: String
+    Default: "web"
+    Description: Insert EC2 Instance Name
+  EC2InstanceAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    Description: Select AMI
+  EC2InstanceInstanceType:
+    Type: String
+    Default: "t2.micro"
+    Description: Select EC2 Instance Type
+  EC2InstanceVolumeType:
+    Type: String
+    Default: "gp2"
+    Description: Select Volume Type
+  EC2InstanceVolumeSize:
+    Type: String
+    Default: "10"
+    Description: Insert Volume Size
+  EC2InstanceSubnet:
+    Type: String
+    Default: PublicSubnet1
+    AllowedValues: [ PublicSubnet1, PublicSubnet2 ]
+  SSHAccessSourceIP:
+    Type: String
+    Description: Insert Network Range to allow SSH access
+
+# RDS Instance
+  DBInstanceName:
+    Type: String
+    Default: "RDS"
+  MySQLMajorVersion:
+    Type: String
+    Default: "5.6"
+    AllowedValues: [ "5.5", "5.6", "5.7" ]
+  MySQLMinorVersion:
+    Type: String
+    Default: "41"
+  DBInstanceClass:
+    Type: String
+    Default: "db.t2.micro"
+  DBInstanceStorageSize:
+    Type: String
+    Default: "10"
+  DBInstanceStorageType:
+    Type: String
+    Default: "gp2"
+  DBName:
+    Type: String
+    Default: "db"
+  DBMasterUserName:
+    Type: String
+    Default: "dbuser"
+    NoEcho: true
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "must begin with a letter and contain only alphanumeric characters."
+  DBPassword:
+    Default: "dbpassword"
+    NoEcho: true
+    Type: String
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "must contain only alphanumeric characters."
+  MultiAZ:
+    Default: "false"
+    Type: String
+    AllowedValues: [ "true", "false" ]
+
+Resources:
+# IAM Profile
+  EC2IAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${Project}-${EC2InstanceName}-Role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+        - "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: EC2IAMRole
+      InstanceProfileName: !Sub "${Project}-${EC2InstanceName}-Profile"
+
+# EC2 Instance
+  EC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: !Ref EC2InstanceName
+      ImageId: !Ref EC2InstanceAMI
+      InstanceType: !Ref EC2InstanceInstanceType
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      DisableApiTermination: false
+      EbsOptimized: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: !Ref EC2InstanceVolumeType
+            VolumeSize: !Ref EC2InstanceVolumeSize
+      SecurityGroupIds:
+        - !Ref ManagedSecurityGroup
+      SubnetId: { "Fn::ImportValue": !Sub "${Project}-${EC2InstanceSubnet}" }
+      UserData: !Base64 |
+        #! /bin/bash
+        yum update -y
+
+# SecurityGroup for Managed
+  ManagedSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: { "Fn::ImportValue": !Sub "${Project}-Vpc" }
+      GroupName: !Sub "${Project}-SecurityGroup"
+      GroupDescription: "-"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHAccessSourceIP
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Name
+          Value: ManagedSecurityGroup
+
+# ElasticIP
+  ElasticIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  ElasticIPAssociate:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      InstanceId: !Ref EC2Instance
+
+# RDS Instance MySQL
+  DBInstance:
+    Type: "AWS::RDS::DBInstance"
+    DeletionPolicy: "Delete"
+    Properties:
+      DBInstanceIdentifier: !Sub "${Project}-${DBInstanceName}"
+      Engine: MySQL
+      EngineVersion: !Sub "${MySQLMajorVersion}.${MySQLMinorVersion}"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBInstanceStorageSize
+      StorageType: !Ref DBInstanceStorageType
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBMasterUserName
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      MultiAZ: !Ref MultiAZ
+      PreferredBackupWindow: "18:00-18:30"
+      PreferredMaintenanceWindow: "sat:19:00-sat:19:30"
+      AutoMinorVersionUpgrade: false
+      DBParameterGroupName: !Ref DBParameterGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      CopyTagsToSnapshot: true
+      BackupRetentionPeriod: 7
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: "Name"
+          Value: !Ref DBInstanceName
+
+# RDS ParameterGroup
+  DBParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
+    Properties:
+      Family: !Sub "MySQL${MySQLMajorVersion}"
+      Description: !Sub "${Project}-${DBInstanceName}-parm"
+
+# RDS SecurityGroup (MySQL)
+  RDSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId: { "Fn::ImportValue": !Sub "${Project}-Vpc" }
+      GroupName: !Sub "${Project}-${DBInstanceName}SecurityGroup"
+      GroupDescription: "-"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: { "Fn::ImportValue": !Sub "${Project}-VpcCidr" }
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: "Name"
+          Value: !Sub "${DBInstanceName}SecurityGroup"
+
+# RDS SubnetGroup
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName: !Sub "${Project}-${DBInstanceName}SubnetGroup"
+      DBSubnetGroupDescription: "-"
+      SubnetIds:
+        - { "Fn::ImportValue": !Sub "${Project}-PrivateSubnet1" }
+        - { "Fn::ImportValue": !Sub "${Project}-PrivateSubnet2" }
+
+Outputs:
+  EC2InstanceID:
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-Id"
+
+  EC2InstancePrivateIp:
+    Value: !GetAtt EC2Instance.PrivateIp
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-PrivateIp"
+
+  EC2InstanceEIP:
+    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-Eip"
+
+  EC2InstanceRoleName:
+    Value: !Sub "${Project}-${EC2InstanceName}-Role"
+    Export:
+      Name: !Sub "${Project}-${EC2InstanceName}-RoleName"
+
+  DBInstanceID:
+    Value: !Ref DBInstance
+    Export:
+      Name: !Sub "${Project}-${DBInstanceName}Id"
+
+  DBInstanceEndpoint:
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${Project}-${DBInstanceName}Endpoint"
+
+  DBName:
+    Value: !Ref DBName
+    Export:
+      Name: !Sub "${Project}-${DBInstanceName}DBName"
